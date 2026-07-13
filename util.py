@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional  # 
 from httpx import AsyncClient
 
 from .constant import IMAGE_DIR
@@ -25,7 +26,7 @@ async def async_fetch_pig_data(url: str):
         return response.json()
 
 
-def find_image_file(pig_id: str) -> Path | None:
+def find_image_file(pig_id: str) -> Optional[Path]:
     exts = ["png", "jpg", "jpeg", "webp", "gif"]
     for ext in exts:
         file = IMAGE_DIR / f"{pig_id}.{ext}"

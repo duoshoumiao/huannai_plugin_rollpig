@@ -17,7 +17,7 @@ HELP = """
 """
 sv = Service(
     "今天是什么小猪",
-    enable_on_default=True,
+    enable_on_default=False,
     help_=HELP.strip(),
 )
 # 载入小猪信息
@@ -123,3 +123,106 @@ async def find_pig(bot: HoshinoBot, ev: CQEvent):
         image_url = "https://pighub.top/data/" + pig["thumbnail"].split("/")[-1]
         messages.append(str(pig["title"] + MessageSegment.image(image_url)))
     await bot.send(ev, "\n".join(messages))
+
+@sv.on_prefix("烤群友")  
+async def roast_member(bot: HoshinoBot, ev: CQEvent):  
+    text = ev.message.extract_plain_text().strip()  
+  
+    force_keywords = {"打点后厨", "偷换烤架", "贿赂主厨", "加急生火", "加急生活"}  
+    super_force_keyword = "强行点火"  
+  
+    # 1) 解析后门口令  
+    force_mode = None  
+    if super_force_keyword in text:  
+        force_mode = "super"  
+    elif any(k in text for k in force_keywords):  
+        force_mode = "normal"  
+  
+    # 2) 解析目标：优先回复，其次 @  
+    target_id = None  
+    target_name = "群友"  
+  
+    reply = getattr(ev, "reply", None)  
+    if reply:  
+        try:  
+            target_id = str(reply.sender.user_id)  
+            target_name = reply.sender.card or reply.sender.nickname  
+        except Exception:  
+            target_id = None  
+  
+    if not target_id:  
+        for seg in ev.message:  
+            if seg.type == "at":  
+                target_id = str(seg.data["qq"])  
+                target_name = "对方"  
+                break  
+  
+    if not target_id:  
+        await bot.finish(ev, "请 @ 或回复你要烤的群友！")  
+        return  
+  
+    if target_id == str(ev.user_id):  
+        await bot.finish(ev, "对自己好一点，别自焚。请发送「今日烤猪」。")  
+        return  
+  
+    # 3) 读取今日抽猪缓存  
+    today_str = datetime.date.today().isoformat()  
+    today_cache = load_json(TODAY_PATH, {"date": "", "records": {}})  
+  
+    if today_cache.get("date") != today_str:  
+        today_cache = {"date": today_str, "records": {}}  
+  
+    records = today_cache["records"]  
+  
+    attacker_pig = records.get(str(ev.user_id))  
+    target_pig = records.get(target_id)  
+  
+    # 4) 目标资格检查  
+    if not target_pig:  
+        await bot.finish(ev, f"【{target_name}】今天还没抽过今日小猪，没法烤。")  
+        return  
+  
+    target_pig_id = target_pig.get("id", "")  
+    if target_pig_id == "human":  
+        await bot.finish(ev, f"【{target_name}】今天是人类形态，烤架拒绝处理。")  
+        return  
+  
+    # 5) 60% 成功 / 30% 逃脱 / 10% 反噬  
+    roll = 1 if force_mode in {"normal", "super"} else random.randint(1, 100)  
+  
+    if roll <= 60:  
+        if not PIG_LIST:  
+            await bot.finish(ev, "猪图鉴为空，请先检查资源文件。")  
+            return  
+  
+        food = random.choice(PIG_LIST)  
+        image = find_image_file(food["id"])  
+  
+        msg = f"【{target_name}】被烤成了【{food['name']}】\n{food['description']}\n分析：{food['analysis']}"  
+        if image:  
+            with Image.open(image) as img:  
+                msg += MessageSegment.image(pic2b64(img))  
+  
+        await bot.send(ev, msg)  
+        return  
+  
+    if roll <= 90:  
+        await bot.finish(ev, f"【{target_name}】机灵地逃掉了，这次没烤到。")  
+        return  
+  
+    if not PIG_LIST:  
+        await bot.finish(ev, "猪图鉴为空，请先检查资源文件。")  
+        return  
+  
+    backfire_food = random.choice(PIG_LIST)  
+    image = find_image_file(backfire_food["id"])  
+  
+    msg = (  
+        f"烤架反噬了发起者，你自己变成了【{backfire_food['name']}】\n"  
+        f"{backfire_food['description']}\n分析：{backfire_food['analysis']}"  
+    )  
+    if image:  
+        with Image.open(image) as img:  
+            msg += MessageSegment.image(pic2b64(img))  
+  
+    await bot.send(ev, msg)
