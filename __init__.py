@@ -22,6 +22,24 @@ sv = Service(
 )
 # 载入小猪信息
 PIG_LIST = load_json(PIGINFO_PATH, [])
+# —— 烤群友专用：排除人类 + 稀有度权重 ——  
+# 稀有猪（低权重，数字越小越稀有）  
+RARE_PIG_WEIGHTS = {  
+    "pig_god": 1,  
+    "chained_crown_pig": 1,  
+    "pearl-pig": 2,  
+    "jewelry-pig": 2,  
+    "vangogh_pig": 3,  
+}  
+DEFAULT_PIG_WEIGHT = 10  # 普通猪默认权重  
+  
+def roll_a_pig():  
+    # 排除 human  
+    pool = [p for p in PIG_LIST if p.get("id") != "human"]  
+    if not pool:  
+        return None  
+    weights = [RARE_PIG_WEIGHTS.get(p.get("id"), DEFAULT_PIG_WEIGHT) for p in pool]  
+    return random.choices(pool, weights=weights, k=1)[0]
 if not PIG_LIST:
     logger.error("猪圈空荡荡，请检查资源文件！")
 
@@ -128,7 +146,7 @@ async def find_pig(bot: HoshinoBot, ev: CQEvent):
 async def roast_member(bot: HoshinoBot, ev: CQEvent):  
     text = ev.message.extract_plain_text().strip()  
   
-    force_keywords = {"打点后厨", "偷换烤架", "贿赂主厨", "加急生火", "加急生活"}  
+    force_keywords = {"打点后厨", "偷换烤架", "贿赂主厨", "加急生火"}  
     super_force_keyword = "强行点火"  
   
     # 1) 解析后门口令  
@@ -178,24 +196,56 @@ async def roast_member(bot: HoshinoBot, ev: CQEvent):
     target_pig = records.get(target_id)  
   
     # 4) 目标资格检查  
+    #    对方今天还没抽过 → 当场帮他抽一个今日小猪并写入缓存  
     if not target_pig:  
-        await bot.finish(ev, f"【{target_name}】今天还没抽过今日小猪，没法烤。")  
-        return  
+        if not PIG_LIST:  
+            await bot.finish(ev, "猪图鉴为空，请先检查资源文件。")  
+            return  
+        target_pig = random.choice(PIG_LIST)  
+        records[target_id] = target_pig  
+        today_cache["date"] = today_str          # 确保日期字段正确  
+        save_json(TODAY_PATH, today_cache)
   
     target_pig_id = target_pig.get("id", "")  
     if target_pig_id == "human":  
         await bot.finish(ev, f"【{target_name}】今天是人类形态，烤架拒绝处理。")  
         return  
   
-    # 5) 60% 成功 / 30% 逃脱 / 10% 反噬  
+    # 5) 基础 60% 成功 / 30% 逃脱 / 10% 反噬  
     roll = 1 if force_mode in {"normal", "super"} else random.randint(1, 100)  
   
-    if roll <= 60:  
-        if not PIG_LIST:  
+    # —— 按双方猪种调整概率（force 模式下 roll=1 会强制成功，不受影响）——  
+    success_line = 60   # <= success_line 判成功  
+    escape_line = 90    # <= escape_line 判逃脱，其余为反噬  
+  
+    target_id_str = target_pig.get("id", "")  
+    attacker_id_str = attacker_pig.get("id", "") if attacker_pig else ""  
+  
+    # 目标好烤的猪 → 提高成功率  
+    EASY_TARGETS = {"roasted-pig", "bacon", "char-siu"}  
+    # 目标难烤的猪 → 降低成功率  
+    HARD_TARGETS = {"wild-boar", "pig_god", "chained_crown_pig"}  
+  
+    if target_id_str in EASY_TARGETS:  
+        success_line += 20  
+    elif target_id_str in HARD_TARGETS:  
+        success_line -= 25  
+  
+    # 发起者是神/王 → 降低反噬概率（抬高逃脱线）  
+    if attacker_id_str in {"pig_god", "chained_crown_pig"}:  
+        escape_line += 5  
+  
+    # 保证阈值合法且不交叉  
+    success_line = max(0, min(success_line, 100))  
+    escape_line = max(success_line, min(escape_line, 100))  
+  
+    # 6) 判定结果  
+    if roll <= success_line:  
+        food = roll_a_pig()  
+        if not food:  
             await bot.finish(ev, "猪图鉴为空，请先检查资源文件。")  
             return  
   
-        food = random.choice(PIG_LIST)  
         image = find_image_file(food["id"])  
   
         msg = f"【{target_name}】被烤成了【{food['name']}】\n{food['description']}\n分析：{food['analysis']}"  
@@ -206,15 +256,15 @@ async def roast_member(bot: HoshinoBot, ev: CQEvent):
         await bot.send(ev, msg)  
         return  
   
-    if roll <= 90:  
+    if roll <= escape_line:  
         await bot.finish(ev, f"【{target_name}】机灵地逃掉了，这次没烤到。")  
         return  
   
-    if not PIG_LIST:  
+    backfire_food = roll_a_pig()  
+    if not backfire_food:  
         await bot.finish(ev, "猪图鉴为空，请先检查资源文件。")  
         return  
   
-    backfire_food = random.choice(PIG_LIST)  
     image = find_image_file(backfire_food["id"])  
   
     msg = (  
