@@ -47,7 +47,7 @@ if not PIG_LIST:
 @sv.scheduled_job("cron", hour="0", minute="0")
 async def auto_refresh_pig_data():
     try:
-        data = await async_fetch_pig_data("https://pighub.top/api/all-images")
+        data = await async_fetch_pig_data("https://pighub.top/api/images?sort=0")
         if data and data.get("images"):
             save_json(PIG_HUB_PATH, data)
             logger.success(f"成功从 PigHub 刷新 {len(data['images'])} 头猪猪")
@@ -62,26 +62,26 @@ async def send_help(bot: HoshinoBot, ev: CQEvent):
     await bot.send(ev, HELP.strip())
 
 
-@sv.on_fullmatch("刷新小猪")
-async def refresh_pig_data(bot: HoshinoBot, ev: CQEvent):
-    try:
-        data = await async_fetch_pig_data("https://pighub.top/api/all-images")
-        if data and data.get("images"):
-            save_json(PIG_HUB_PATH, data)
-            msg = f"成功从 PigHub 刷新 {len(data['images'])} 头猪猪"
-        else:
-            msg = "刷新失败，PigHub 中找不到猪猪。"
-        await bot.send(ev, msg)
-    except Exception as e:
+@sv.on_fullmatch("刷新小猪")  
+async def refresh_pig_data(bot: HoshinoBot, ev: CQEvent):  
+    try:  
+        data = await async_fetch_pig_data("https://pighub.top/api/images?sort=0")  
+        if data and data.get("data"):  
+            save_json(PIG_HUB_PATH, data)  
+            msg = f"成功从 PigHub 刷新 {len(data['data'])} 头猪猪"  
+        else:  
+            msg = "刷新失败，PigHub 中找不到猪猪。"  
+        await bot.send(ev, msg)  
+    except Exception as e:  
         await bot.send(ev, f"刷新失败，无法从PigHub获取数据。{e}")
 
 
-@sv.on_fullmatch("随机小猪")
-async def send_random_pig(bot: HoshinoBot, ev: CQEvent):
-    data = load_json(PIG_HUB_PATH, {})
-    pig_images = data["images"]
-    pig = random.choice(pig_images)
-    image_url = "https://pighub.top/data/" + pig["thumbnail"].split("/")[-1]
+@sv.on_fullmatch("随机小猪")  
+async def send_random_pig(bot: HoshinoBot, ev: CQEvent):  
+    data = load_json(PIG_HUB_PATH, {})  
+    pig_images = data["data"]  
+    pig = random.choice(pig_images)  
+    image_url = "https://pighub.top" + pig["image_url"]  
     await bot.send(ev, MessageSegment.image(image_url))
 
 
@@ -123,7 +123,7 @@ async def send_today_pig(bot: HoshinoBot, ev: CQEvent):
 @sv.on_prefix("找猪")
 async def find_pig(bot: HoshinoBot, ev: CQEvent):
     data = load_json(PIG_HUB_PATH, {})
-    pig_images = data["images"]
+    pig_images = data["data"] 
     if not pig_images:
         await bot.finish("猪圈空荡荡...")
         return
@@ -138,7 +138,7 @@ async def find_pig(bot: HoshinoBot, ev: CQEvent):
     count = min(len(found_pigs), 8)
     for i in range(count):
         pig = found_pigs[i]
-        image_url = "https://pighub.top/data/" + pig["thumbnail"].split("/")[-1]
+        image_url = "https://pighub.top" + pig["image_url"]
         messages.append(str(pig["title"] + MessageSegment.image(image_url)))
     await bot.send(ev, "\n".join(messages))
 
