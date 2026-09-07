@@ -142,8 +142,8 @@ async def find_pig(bot: HoshinoBot, ev: CQEvent):
         messages.append(str(pig["title"] + MessageSegment.image(image_url)))
     await bot.send(ev, "\n".join(messages))
 
-@sv.on_prefix("烤群友")  
-async def roast_member(bot: HoshinoBot, ev: CQEvent):  
+@sv.on_keyword("烤群友")  
+async def roast_member(bot: HoshinoBot, ev: CQEvent):
     text = ev.message.extract_plain_text().strip()  
   
     force_keywords = {"打点后厨", "偷换烤架", "贿赂主厨", "加急生火"}  
@@ -162,18 +162,33 @@ async def roast_member(bot: HoshinoBot, ev: CQEvent):
   
     reply = getattr(ev, "reply", None)  
     if reply:  
+        # 2-1) 优先检测被引用消息正文里被 @ 的 QQ  
         try:  
-            target_id = str(reply.sender.user_id)  
-            target_name = reply.sender.card or reply.sender.nickname  
+            for seg in reply.message:  
+                if seg.type == "at":  
+                    qq = str(seg.data["qq"])  
+                    if qq != str(ev.user_id):  
+                        target_id = qq  
+                        target_name = "对方"  
+                        break  
         except Exception:  
-            target_id = None  
+            pass  
   
+        # 2-2) 被引用正文里没有 @，则取被引用消息的发送者  
+        if not target_id:  
+            try:  
+                target_id = str(reply.sender.user_id)  
+                target_name = reply.sender.card or reply.sender.nickname  
+            except Exception:  
+                target_id = None  
+  
+    # 2-3) 仍未确定目标，则用当前消息里的 @  
     if not target_id:  
         for seg in ev.message:  
             if seg.type == "at":  
                 target_id = str(seg.data["qq"])  
                 target_name = "对方"  
-                break  
+                break
   
     if not target_id:  
         await bot.finish(ev, "请 @ 或回复你要烤的群友！")  
